@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Trace Lock</title>
+  <style>
+    :root {
+      --bg: #0b0b0c;
+      --fg: #f5f5f7;
+      --muted: #b7bbc3;
+      --glass: rgba(255,255,255,0.06);
+      --glass-border: rgba(255,255,255,0.12);
+      --accent: #7aa2ff;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 15px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
+      overscroll-behavior: none; /* no pull-to-refresh */
+      touch-action: none; /* disable panning/zooming gestures */
+    }
+
+    /* The traced image stays absolutely fixed & untouchable */
+    #traceImage {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      max-width: 100vw;
+      max-height: 100vh;
+      object-fit: contain;
+      pointer-events: none; /* cannot be dragged or scrolled */
+      user-select: none;
+      -webkit-user-drag: none;
+      image-rendering: auto;
+      filter: none;
+      opacity: 1;
+    }
+
+    body.greyscale #traceImage { filter: grayscale(100%); }
+
+    /* UI */
+    .ui {
+      position: fixed; inset: 0; pointer-events: none; /* allows clicks only on children */
+    }
+    .toolbar {
+      position: absolute; top: 14px; left: 14px; display: flex; gap: 10px; align-items: center;
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      padding: 10px; border-radius: 14px; backdrop-filter: blur(10px);
+      pointer-events: auto; /* clickable */
+      box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+    }
+    .toolbar button, .toolbar label {
+      appearance: none; border: 1px solid var(--glass-border); background: rgba(255,255,255,0.08);
+      color: var(--fg); padding: 8px 12px; border-radius: 10px; cursor: pointer; font-weight: 600;
+    }
+    .toolbar button:hover, .toolbar label:hover { background: rgba(255,255,255,0.14); }
+    .toolbar .kbd { font: 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted); }
+
+    .hint {
+      position: absolute; left: 14px; bottom: 14px; max-width: 560px;
+      color: var(--muted); background: var(--glass); border: 1px solid var(--glass-border);
+      padding: 10px 12px; border-radius: 12px; backdrop-filter: blur(8px); pointer-events: auto;
+    }
+    .hint b { color: var(--fg); }
+
+    .center-callout {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      color: var(--muted); text-align: center;
+    }
+    .center-callout .drop {
+      border: 1.5px dashed var(--glass-border); border-radius: 18px; padding: 26px 28px; background: rgba(255,255,255,0.03);
+    }
+
+    input[type=file] { display: none; }
+
+    /* Hide scrollbars entirely (desktop) */
+    ::-webkit-scrollbar { width: 0; height: 0; }
+  </style>
+</head>
+<body>
+  <img id="traceImage" alt="Your image will appear centered here" hidden>
+
+  <div class="ui" aria-hidden="false">
+    <div class="toolbar">
+      <label for="fileInput" title="Upload an image file (PNG/JPG/WebP)">Upload</label>
+      <button id="fullBtn" title="Enter Fullscreen (F)">Fullscreen</button>
+      <button id="clearBtn" title="Remove current image (Del)">Clear</button>
+      <span class="kbd">Paste image: <b>Ctrl/Cmd + V</b></span>
+      <span class="kbd">Greyscale: <b>Shift + G</b></span>
+    </div>
+
+    <div class="hint">
+      <div><b>How it works:</b> Paste (<b>Ctrl/Cmd+V</b>) or Upload an image. It will be pinned dead‑center and won’t move. Touch, scroll, or drag won’t budge it—perfect for tracing on a touchscreen or tablet.</div>
+      <div style="margin-top:6px">Use <b>Shift+G</b> to toggle greyscale for shading/value studies. Hit <b>Fullscreen</b> for maximum canvas.</div>
+    </div>
+
+    <div id="dropArea" class="center-callout">
+      <div class="drop">
+        <div style="font-weight:700; font-size:18px; color:var(--fg);">Drop, Paste, or Upload an Image</div>
+        <div style="margin-top:6px">Drag a file here • Press <b>Ctrl/Cmd+V</b> • or click <b>Upload</b></div>
+      </div>
+    </div>
+  </div>
+
+  <input id="fileInput" type="file" accept="image/*" />
+
+  <script>
+    (function(){
+      const img = document.getElementById('traceImage');
+      const fileInput = document.getElementById('fileInput');
+      const dropArea = document.getElementById('dropArea');
+      const fullBtn = document.getElementById('fullBtn');
+      const clearBtn = document.getElementById('clearBtn');
+
+      // Prevent any page scroll/zoom/pan
+      const block = (e) => { e.preventDefault(); e.stopPropagation(); };
+      ['touchstart','touchmove','touchend','gesturestart','gesturechange','gestureend','wheel'].forEach(evt => {
+        window.addEventListener(evt, block, { passive: false });
+      });
+
+      // Slight double-tap zoom prevention on iOS
+      let lastTouchEnd = 0;
+      window.addEventListener('touchend', (e) => {
+        const now = Date.now();
+        if (now - lastTouchEnd <= 300) e.preventDefault();
+        lastTouchEnd = now;
+      }, { passive: false });
+
+      function setImageFromBlob(blob){
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        img.src = url;
+        img.hidden = false;
+        dropArea.style.display = 'none';
+      }
+
+      function setImageFromFile(file){
+        if (!file || !file.type.startsWith('image/')) return;
+        setImageFromBlob(file);
+      }
+
+      // File input
+      fileInput.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        setImageFromFile(file);
+        fileInput.value = '';
+      });
+
+      // Drag & drop
+      ;['dragenter','dragover','dragleave','drop'].forEach(evt => {
+        window.addEventListener(evt, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }, { passive: false });
+      });
+
+      window.addEventListener('drop', (e) => {
+        const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        setImageFromFile(file);
+      });
+
+      // Paste from clipboard
+      window.addEventListener('paste', async (e) => {
+        const items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        for (const item of items) {
+          if (item.type.startsWith('image/')) {
+            const blob = item.getAsFile();
+            setImageFromBlob(blob);
+            return;
+          }
+        }
+        // If user pasted a URL to an image
+        const text = e.clipboardData.getData('text');
+        if (text && /^https?:\/\/.+\.(png|jpe?g|webp|gif|bmp)$/i.test(text)) {
+          try {
+            const res = await fetch(text, { mode: 'cors' });
+            const blob = await res.blob();
+            if (blob.type.startsWith('image/')) setImageFromBlob(blob);
+          } catch (err) {
+            console.warn('Could not fetch pasted image URL', err);
+          }
+        }
+      });
+
+      // Fullscreen
+      fullBtn.addEventListener('click', async () => {
+        try {
+          if (!document.fullscreenElement) {
+            await document.documentElement.requestFullscreen();
+            if (screen.orientation && screen.orientation.lock) {
+              try { await screen.orientation.lock('landscape'); } catch {}
+            }
+          } else {
+            await document.exitFullscreen();
+          }
+        } catch (e) { console.warn(e); }
+      });
+
+      // Clear image
+      clearBtn.addEventListener('click', () => {
+        img.src = '';
+        img.hidden = true;
+        dropArea.style.display = '';
+      });
+
+      // Keyboard shortcuts: Shift+G greyscale, F fullscreen, Delete clear
+      window.addEventListener('keydown', async (e) => {
+        const key = e.key.toLowerCase();
+        if (e.shiftKey && key === 'g') {
+          document.body.classList.toggle('greyscale');
+        } else if (key === 'f') {
+          e.preventDefault();
+          fullBtn.click();
+        } else if (key === 'delete' || key === 'backspace') {
+          if (!e.target || (e.target === document.body || e.target === document.documentElement)) {
+            e.preventDefault();
+            clearBtn.click();
+          }
+        }
+      });
+
+      // Hide cursor after idle for distraction-free tracing
+      let hideTimer = null;
+      const hideCursor = () => document.body.style.cursor = 'none';
+      const showCursor = () => document.body.style.cursor = '';
+      const bump = () => { showCursor(); clearTimeout(hideTimer); hideTimer = setTimeout(hideCursor, 1500); };
+      ['mousemove','mousedown','touchstart','touchmove','keydown'].forEach(evt => window.addEventListener(evt, bump, { passive: true }));
+      bump();
+
+      // Context menu off (avoid accidental long-press menus)
+      window.addEventListener('contextmenu', (e) => e.preventDefault());
+    })();
+  </script>
+</body>
+</html>
+
