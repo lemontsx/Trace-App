@@ -1,45 +1,56 @@
-📐 Touchscreen Tracing Tool
+# ✏️ TraceApp – Digital Lightbox for Touchscreens
 
-A lightweight web tool designed for artists and designers who use touchscreen devices. It allows you to trace over images without accidental screen movement, and includes a grayscale mode for improved sketching and shading.
+**TraceApp** is a simple web-based tool that turns your tablet or touchscreen device into a digital lightbox. It locks the screen so you can place a sheet of paper over it and trace images without accidental movement. It also includes a grayscale mode to assist with sketching and shading references.
 
-✨ Features
+---
 
-Screen Lock Mode
-Prevents the screen from reacting to touch inputs, allowing you to trace with ease and precision.
+## 📱 How It Works
 
-Grayscale Switcher
-Quickly toggle grayscale mode to help focus on values and shading without color distractions.
+1. Open the site on your touchscreen device (tablet recommended).
+2. Display your reference image or sketch layout.
+3. Place a piece of paper over the screen.
+4. Enable **Screen Lock** to prevent touch interference.
+5. Toggle **Grayscale Mode** (optional) to simplify values for shading practice.
+6. Trace the image directly through the paper using the backlit screen.
 
-🖌️ Use Cases
+> 💡 Works best with thin paper and a bright screen.
 
-Tracing over references or anatomy guides
+---
 
-Practicing line work and proportions
+## ✨ Features
 
-Creating value studies using grayscale mode
+- 🔒 **Screen Lock**  
+  Disables touch input to avoid accidental zooming, scrolling, or movement while tracing.
 
-Using your tablet as a lightbox
+- 🎨 **Grayscale Toggle**  
+  Converts the image to black & white for value studies and easier shading references.
 
-🚀 How to Use
+- 💡 **Clean UI**  
+  Minimal distractions, full-screen mode supported.
 
-Open the site on your touchscreen device.
+---
 
-Upload or display your reference image.
+## 🛠️ Tech Stack
 
-Activate Screen Lock to freeze the screen.
+- HTML
+- CSS
+- JavaScript
 
-Toggle Grayscale Mode if needed.
+No dependencies or frameworks — lightweight and fast.
 
-Start tracing or sketching directly on your screen.
+---
 
-💡 Tip: Use a stylus for best results!
+## 📂 Usage
 
-🛠️ Tech Stack
+You can use it directly from the web or host it yourself:
 
-HTML/CSS/JavaScript
+### 🔗 Web Version
 
-Optimized for mobile and tablet browsers
+[Try it live here](https://your-live-site-url.com)
 
-📄 License
+### 🖥️ Local Hosting
 
-MIT License — free to use and modify.
+```bash
+git clone https://github.com/your-username/tracepad.git
+cd tracepad
+open index.html
