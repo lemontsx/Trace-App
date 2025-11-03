@@ -1,243 +1,267 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Trace Lock</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TraceMaster Studio</title>
   <style>
     :root {
-      --bg: #0b0b0c;
-      --fg: #f5f5f7;
-      --muted: #b7bbc3;
-      --glass: rgba(255,255,255,0.06);
-      --glass-border: rgba(255,255,255,0.12);
-      --accent: #7aa2ff;
+      --bg: #0e0e11;
+      --fg: #f0f0f0;
+      --accent: #58a6ff;
+      --toolbar-bg: rgba(30,30,30,0.85);
+      --panel-bg: rgba(20,20,20,0.95);
+      --border: rgba(255,255,255,0.1);
+      --muted: #999;
     }
-    * { box-sizing: border-box; }
-    html, body { height: 100%; }
     body {
       margin: 0;
       background: var(--bg);
       color: var(--fg);
-      font: 15px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
-      overscroll-behavior: none; /* no pull-to-refresh */
-      touch-action: none; /* disable panning/zooming gestures */
+      font-family: system-ui, sans-serif;
+      overflow: hidden;
+      touch-action: none;
     }
-
-    /* The traced image stays absolutely fixed & untouchable */
-    #traceImage {
+    canvas {
       position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      max-width: 100vw;
-      max-height: 100vh;
-      object-fit: contain;
-      pointer-events: none; /* cannot be dragged or scrolled */
-      user-select: none;
-      -webkit-user-drag: none;
-      image-rendering: auto;
-      filter: none;
-      opacity: 1;
+      inset: 0;
+      cursor: crosshair;
+      touch-action: none;
     }
-
-    body.greyscale #traceImage { filter: grayscale(100%); }
-
-    /* UI */
-    .ui {
-      position: fixed; inset: 0; pointer-events: none; /* allows clicks only on children */
+    #toolbar, #settingsPanel {
+      position: fixed;
+      z-index: 50;
+      background: var(--toolbar-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      backdrop-filter: blur(10px);
+      padding: 10px;
+      color: var(--fg);
     }
-    .toolbar {
-      position: absolute; top: 14px; left: 14px; display: flex; gap: 10px; align-items: center;
-      background: var(--glass);
-      border: 1px solid var(--glass-border);
-      padding: 10px; border-radius: 14px; backdrop-filter: blur(10px);
-      pointer-events: auto; /* clickable */
-      box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+    #toolbar { top: 10px; left: 10px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    #settingsPanel { top: 10px; right: 10px; width: 260px; display: none; flex-direction: column; }
+    button, select, input[type=color], input[type=range] {
+      background: var(--panel-bg);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-weight: 600;
     }
-    .toolbar button, .toolbar label {
-      appearance: none; border: 1px solid var(--glass-border); background: rgba(255,255,255,0.08);
-      color: var(--fg); padding: 8px 12px; border-radius: 10px; cursor: pointer; font-weight: 600;
-    }
-    .toolbar button:hover, .toolbar label:hover { background: rgba(255,255,255,0.14); }
-    .toolbar .kbd { font: 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted); }
-
-    .hint {
-      position: absolute; left: 14px; bottom: 14px; max-width: 560px;
-      color: var(--muted); background: var(--glass); border: 1px solid var(--glass-border);
-      padding: 10px 12px; border-radius: 12px; backdrop-filter: blur(8px); pointer-events: auto;
-    }
-    .hint b { color: var(--fg); }
-
-    .center-callout {
-      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      color: var(--muted); text-align: center;
-    }
-    .center-callout .drop {
-      border: 1.5px dashed var(--glass-border); border-radius: 18px; padding: 26px 28px; background: rgba(255,255,255,0.03);
-    }
-
-    input[type=file] { display: none; }
-
-    /* Hide scrollbars entirely (desktop) */
-    ::-webkit-scrollbar { width: 0; height: 0; }
+    button:hover, select:hover { background: rgba(255,255,255,0.1); }
+    .section { margin-top: 8px; }
+    .toolGroup { display: flex; gap: 4px; flex-wrap: wrap; }
   </style>
 </head>
 <body>
-  <img id="traceImage" alt="Your image will appear centered here" hidden>
+  <canvas id="draw"></canvas>
+  <canvas id="overlay"></canvas>
 
-  <div class="ui" aria-hidden="false">
-    <div class="toolbar">
-      <label for="fileInput" title="Upload an image file (PNG/JPG/WebP)">Upload</label>
-      <button id="fullBtn" title="Enter Fullscreen (F)">Fullscreen</button>
-      <button id="clearBtn" title="Remove current image (Del)">Clear</button>
-      <span class="kbd">Paste image: <b>Ctrl/Cmd + V</b></span>
-      <span class="kbd">Greyscale: <b>Shift + G</b></span>
+  <div id="toolbar">
+    <button id="uploadBtn">Upload</button>
+    <input id="fileInput" type="file" accept="image/*" hidden>
+    <button id="pasteBtn">Paste</button>
+    <button id="clearBtn">Clear</button>
+    <button id="saveBtn">Save PNG</button>
+    <select id="toolSelect">
+      <option value="brush">Brush</option>
+      <option value="eraser">Eraser</option>
+      <option value="line">Line</option>
+      <option value="rect">Rectangle</option>
+      <option value="circle">Circle</option>
+      <option value="text">Text</option>
+      <option value="fill">Fill</option>
+    </select>
+    <button id="settingsBtn">⚙️</button>
+  </div>
+
+  <div id="settingsPanel">
+    <h3>Settings</h3>
+    <div class="section">
+      <label>Brush Color <input type="color" id="colorPicker" value="#ffffff"></label>
     </div>
-
-    <div class="hint">
-      <div><b>How it works:</b> Paste (<b>Ctrl/Cmd+V</b>) or Upload an image. It will be pinned dead‑center and won’t move. Touch, scroll, or drag won’t budge it—perfect for tracing on a touchscreen or tablet.</div>
-      <div style="margin-top:6px">Use <b>Shift+G</b> to toggle greyscale for shading/value studies. Hit <b>Fullscreen</b> for maximum canvas.</div>
+    <div class="section">
+      <label>Brush Size <input type="range" id="sizePicker" min="1" max="50" value="5"></label>
     </div>
-
-    <div id="dropArea" class="center-callout">
-      <div class="drop">
-        <div style="font-weight:700; font-size:18px; color:var(--fg);">Drop, Paste, or Upload an Image</div>
-        <div style="margin-top:6px">Drag a file here • Press <b>Ctrl/Cmd+V</b> • or click <b>Upload</b></div>
-      </div>
+    <div class="section">
+      <label>Opacity <input type="range" id="opacityPicker" min="0.1" max="1" step="0.1" value="1"></label>
+    </div>
+    <div class="section">
+      <label>Theme
+        <select id="themePicker">
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+          <option value="blue">Blue</option>
+          <option value="sand">Sand</option>
+          <option value="mint">Mint</option>
+        </select>
+      </label>
+    </div>
+    <div class="section">
+      <button id="gridBtn">Toggle Grid</button>
+      <button id="valuesBtn">Greyscale View</button>
+    </div>
+    <div class="section">
+      <button id="undoBtn">Undo</button>
+      <button id="redoBtn">Redo</button>
+      <button id="resetBtn">Reset Canvas</button>
     </div>
   </div>
 
-  <input id="fileInput" type="file" accept="image/*" />
-
   <script>
-    (function(){
-      const img = document.getElementById('traceImage');
-      const fileInput = document.getElementById('fileInput');
-      const dropArea = document.getElementById('dropArea');
-      const fullBtn = document.getElementById('fullBtn');
-      const clearBtn = document.getElementById('clearBtn');
+    const canvas = document.getElementById('draw');
+    const ctx = canvas.getContext('2d');
+    const overlay = document.getElementById('overlay');
+    const octx = overlay.getContext('2d');
 
-      // Prevent any page scroll/zoom/pan
-      const block = (e) => { e.preventDefault(); e.stopPropagation(); };
-      ['touchstart','touchmove','touchend','gesturestart','gesturechange','gestureend','wheel'].forEach(evt => {
-        window.addEventListener(evt, block, { passive: false });
-      });
+    let drawing = false;
+    let startX, startY;
+    let tool = 'brush';
+    let brushColor = '#ffffff';
+    let brushSize = 5;
+    let brushOpacity = 1;
+    let img = null;
 
-      // Slight double-tap zoom prevention on iOS
-      let lastTouchEnd = 0;
-      window.addEventListener('touchend', (e) => {
-        const now = Date.now();
-        if (now - lastTouchEnd <= 300) e.preventDefault();
-        lastTouchEnd = now;
-      }, { passive: false });
+    const resize = () => {
+      canvas.width = overlay.width = window.innerWidth;
+      canvas.height = overlay.height = window.innerHeight;
+      if (img) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    };
+    window.addEventListener('resize', resize);
+    resize();
 
-      function setImageFromBlob(blob){
-        if (!blob) return;
-        const url = URL.createObjectURL(blob);
-        img.src = url;
-        img.hidden = false;
-        dropArea.style.display = 'none';
+    document.getElementById('toolSelect').onchange = e => tool = e.target.value;
+    document.getElementById('colorPicker').onchange = e => brushColor = e.target.value;
+    document.getElementById('sizePicker').oninput = e => brushSize = +e.target.value;
+    document.getElementById('opacityPicker').oninput = e => brushOpacity = +e.target.value;
+
+    overlay.addEventListener('pointerdown', e => {
+      drawing = true;
+      startX = e.clientX; startY = e.clientY;
+      if (tool === 'fill') {
+        ctx.fillStyle = brushColor;
+        ctx.fillRect(0,0,canvas.width,canvas.height);
       }
-
-      function setImageFromFile(file){
-        if (!file || !file.type.startsWith('image/')) return;
-        setImageFromBlob(file);
+    });
+    overlay.addEventListener('pointerup', e => {
+      if (!drawing) return;
+      drawing = false;
+      if (tool === 'line' || tool === 'rect' || tool === 'circle') {
+        ctx.globalAlpha = brushOpacity;
+        ctx.strokeStyle = brushColor;
+        ctx.lineWidth = brushSize;
+        const w = e.clientX - startX;
+        const h = e.clientY - startY;
+        if (tool === 'line') {
+          ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineTo(e.clientX, e.clientY); ctx.stroke();
+        } else if (tool === 'rect') {
+          ctx.strokeRect(startX, startY, w, h);
+        } else if (tool === 'circle') {
+          ctx.beginPath();
+          const r = Math.sqrt(w*w+h*h);
+          ctx.arc(startX, startY, r, 0, Math.PI*2);
+          ctx.stroke();
+        }
+        octx.clearRect(0,0,overlay.width,overlay.height);
       }
-
-      // File input
-      fileInput.addEventListener('change', (e) => {
-        const file = e.target.files && e.target.files[0];
-        setImageFromFile(file);
-        fileInput.value = '';
-      });
-
-      // Drag & drop
-      ;['dragenter','dragover','dragleave','drop'].forEach(evt => {
-        window.addEventListener(evt, (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-        }, { passive: false });
-      });
-
-      window.addEventListener('drop', (e) => {
-        const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-        setImageFromFile(file);
-      });
-
-      // Paste from clipboard
-      window.addEventListener('paste', async (e) => {
-        const items = e.clipboardData && e.clipboardData.items;
-        if (!items) return;
-        for (const item of items) {
-          if (item.type.startsWith('image/')) {
-            const blob = item.getAsFile();
-            setImageFromBlob(blob);
-            return;
-          }
+    });
+    overlay.addEventListener('pointermove', e => {
+      if (!drawing) return;
+      if (tool === 'brush' || tool === 'eraser') {
+        ctx.globalAlpha = brushOpacity;
+        ctx.lineWidth = brushSize;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = tool === 'eraser' ? '#000' : brushColor;
+        ctx.lineTo(e.clientX, e.clientY);
+        ctx.stroke();
+      } else if (['line','rect','circle'].includes(tool)) {
+        octx.clearRect(0,0,overlay.width,overlay.height);
+        octx.strokeStyle = brushColor;
+        octx.lineWidth = 1;
+        const w = e.clientX - startX;
+        const h = e.clientY - startY;
+        if (tool === 'line') {
+          octx.beginPath(); octx.moveTo(startX,startY); octx.lineTo(e.clientX,e.clientY); octx.stroke();
+        } else if (tool === 'rect') {
+          octx.strokeRect(startX,startY,w,h);
+        } else if (tool === 'circle') {
+          octx.beginPath();
+          const r = Math.sqrt(w*w+h*h);
+          octx.arc(startX,startY,r,0,Math.PI*2);
+          octx.stroke();
         }
-        // If user pasted a URL to an image
-        const text = e.clipboardData.getData('text');
-        if (text && /^https?:\/\/.+\.(png|jpe?g|webp|gif|bmp)$/i.test(text)) {
-          try {
-            const res = await fetch(text, { mode: 'cors' });
-            const blob = await res.blob();
-            if (blob.type.startsWith('image/')) setImageFromBlob(blob);
-          } catch (err) {
-            console.warn('Could not fetch pasted image URL', err);
-          }
-        }
-      });
+      }
+    });
 
-      // Fullscreen
-      fullBtn.addEventListener('click', async () => {
-        try {
-          if (!document.fullscreenElement) {
-            await document.documentElement.requestFullscreen();
-            if (screen.orientation && screen.orientation.lock) {
-              try { await screen.orientation.lock('landscape'); } catch {}
-            }
-          } else {
-            await document.exitFullscreen();
-          }
-        } catch (e) { console.warn(e); }
-      });
+    document.getElementById('clearBtn').onclick = () => ctx.clearRect(0,0,canvas.width,canvas.height);
+    document.getElementById('saveBtn').onclick = () => {
+      const link = document.createElement('a');
+      link.download = 'trace.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    };
 
-      // Clear image
-      clearBtn.addEventListener('click', () => {
-        img.src = '';
-        img.hidden = true;
-        dropArea.style.display = '';
-      });
+    document.getElementById('uploadBtn').onclick = ()=> document.getElementById('fileInput').click();
+    document.getElementById('fileInput').onchange = e => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = ev => {
+          const image = new Image();
+          image.onload = () => {
+            img = image;
+            ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+          };
+          image.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+    };
 
-      // Keyboard shortcuts: Shift+G greyscale, F fullscreen, Delete clear
-      window.addEventListener('keydown', async (e) => {
-        const key = e.key.toLowerCase();
-        if (e.shiftKey && key === 'g') {
-          document.body.classList.toggle('greyscale');
-        } else if (key === 'f') {
-          e.preventDefault();
-          fullBtn.click();
-        } else if (key === 'delete' || key === 'backspace') {
-          if (!e.target || (e.target === document.body || e.target === document.documentElement)) {
-            e.preventDefault();
-            clearBtn.click();
-          }
-        }
-      });
+    document.getElementById('settingsBtn').onclick = ()=>{
+      const panel = document.getElementById('settingsPanel');
+      panel.style.display = panel.style.display==='flex'?'none':'flex';
+    };
 
-      // Hide cursor after idle for distraction-free tracing
-      let hideTimer = null;
-      const hideCursor = () => document.body.style.cursor = 'none';
-      const showCursor = () => document.body.style.cursor = '';
-      const bump = () => { showCursor(); clearTimeout(hideTimer); hideTimer = setTimeout(hideCursor, 1500); };
-      ['mousemove','mousedown','touchstart','touchmove','keydown'].forEach(evt => window.addEventListener(evt, bump, { passive: true }));
-      bump();
+    document.getElementById('themePicker').onchange = e => {
+      const theme = e.target.value;
+      if(theme==='light'){
+        document.documentElement.style.setProperty('--bg','#f5f5f7');
+        document.documentElement.style.setProperty('--fg','#0b0b0c');
+        document.documentElement.style.setProperty('--toolbar-bg','rgba(255,255,255,0.8)');
+      } else if(theme==='blue'){
+        document.documentElement.style.setProperty('--bg','#001f3f');
+        document.documentElement.style.setProperty('--fg','#f5f5f7');
+      } else if(theme==='sand'){
+        document.documentElement.style.setProperty('--bg','#f3efe6');
+        document.documentElement.style.setProperty('--fg','#2b2b2b');
+      } else if(theme==='mint'){
+        document.documentElement.style.setProperty('--bg','#e9fff9');
+        document.documentElement.style.setProperty('--fg','#202020');
+      } else {
+        document.documentElement.style.setProperty('--bg','#0e0e11');
+        document.documentElement.style.setProperty('--fg','#f0f0f0');
+      }
+    };
 
-      // Context menu off (avoid accidental long-press menus)
-      window.addEventListener('contextmenu', (e) => e.preventDefault());
-    })();
+    document.getElementById('gridBtn').onclick = ()=>{
+      const show = !overlay.classList.contains('grid');
+      overlay.classList.toggle('grid',show);
+      if(show){
+        const step=50; octx.strokeStyle='rgba(255,255,255,0.1)';
+        for(let x=0;x<overlay.width;x+=step){ octx.beginPath(); octx.moveTo(x,0); octx.lineTo(x,overlay.height); octx.stroke(); }
+        for(let y=0;y<overlay.height;y+=step){ octx.beginPath(); octx.moveTo(0,y); octx.lineTo(overlay.width,y); octx.stroke(); }
+      } else {
+        octx.clearRect(0,0,overlay.width,overlay.height);
+      }
+    };
+
+    document.getElementById('valuesBtn').onclick = ()=>{
+      document.body.classList.toggle('greyscale');
+      if(document.body.classList.contains('greyscale')){
+        canvas.style.filter='grayscale(100%)';
+      } else canvas.style.filter='none';
+    };
   </script>
 </body>
 </html>
-
